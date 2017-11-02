@@ -22,7 +22,10 @@ type MongoStorage struct {
 }
 
 func New(session *mgo.Session, dbName string) *MongoStorage {
-	storage := &MongoStorage{dbName, session}
+	storage := &MongoStorage{
+		dbName:  dbName,
+		session: session.Copy(),
+	}
 	index := mgo.Index{
 		Key:        []string{REFRESHTOKEN},
 		Unique:     false, // refreshtoken is sometimes empty
@@ -38,9 +41,18 @@ func New(session *mgo.Session, dbName string) *MongoStorage {
 	return storage
 }
 
+func (store *MongoStorage) Clone() *MongoStorage {
+	return &MongoStorage{
+		dbName:  store.dbName,
+		session: session.Clone(),
+	}
+}
+
+func (store *MongoStorage) Close() {
+	store.session.Close()
+}
+
 func (store *MongoStorage) GetClient(id string) (*osin.Client, error) {
-	session := store.session.Copy()
-	defer session.Close()
 	clients := session.DB(store.dbName).C(CLIENT_COL)
 	client := new(osin.Client)
 	err := clients.FindId(id).One(client)
@@ -48,24 +60,18 @@ func (store *MongoStorage) GetClient(id string) (*osin.Client, error) {
 }
 
 func (store *MongoStorage) SetClient(id string, client *osin.Client) error {
-	session := store.session.Copy()
-	defer session.Close()
 	clients := session.DB(store.dbName).C(CLIENT_COL)
 	_, err := clients.UpsertId(id, client)
 	return err
 }
 
 func (store *MongoStorage) SaveAuthorize(data *osin.AuthorizeData) error {
-	session := store.session.Copy()
-	defer session.Close()
 	authorizations := session.DB(store.dbName).C(AUTHORIZE_COL)
 	_, err := authorizations.UpsertId(data.Code, data)
 	return err
 }
 
 func (store *MongoStorage) LoadAuthorize(code string) (*osin.AuthorizeData, error) {
-	session := store.session.Copy()
-	defer session.Close()
 	authorizations := session.DB(store.dbName).C(AUTHORIZE_COL)
 	authData := new(osin.AuthorizeData)
 	err := authorizations.FindId(code).One(authData)
@@ -73,8 +79,6 @@ func (store *MongoStorage) LoadAuthorize(code string) (*osin.AuthorizeData, erro
 }
 
 func (store *MongoStorage) RemoveAuthorize(code string) error {
-	session := store.session.Copy()
-	defer session.Close()
 	authorizations := session.DB(store.dbName).C(AUTHORIZE_COL)
 	return authorizations.RemoveId(code)
 }
@@ -88,8 +92,6 @@ func (store *MongoStorage) SaveAccess(data *osin.AccessData) error {
 }
 
 func (store *MongoStorage) LoadAccess(token string) (*osin.AccessData, error) {
-	session := store.session.Copy()
-	defer session.Close()
 	accesses := session.DB(store.dbName).C(ACCESS_COL)
 	accData := new(osin.AccessData)
 	err := accesses.FindId(token).One(accData)
@@ -97,15 +99,11 @@ func (store *MongoStorage) LoadAccess(token string) (*osin.AccessData, error) {
 }
 
 func (store *MongoStorage) RemoveAccess(token string) error {
-	session := store.session.Copy()
-	defer session.Close()
 	accesses := session.DB(store.dbName).C(ACCESS_COL)
 	return accesses.RemoveId(token)
 }
 
 func (store *MongoStorage) LoadRefresh(token string) (*osin.AccessData, error) {
-	session := store.session.Copy()
-	defer session.Close()
 	accesses := session.DB(store.dbName).C(ACCESS_COL)
 	accData := new(osin.AccessData)
 	err := accesses.Find(bson.M{REFRESHTOKEN: token}).One(accData)
@@ -113,8 +111,6 @@ func (store *MongoStorage) LoadRefresh(token string) (*osin.AccessData, error) {
 }
 
 func (store *MongoStorage) RemoveRefresh(token string) error {
-	session := store.session.Copy()
-	defer session.Close()
 	accesses := session.DB(store.dbName).C(ACCESS_COL)
 	return accesses.Update(bson.M{REFRESHTOKEN: token}, bson.M{
 		"$unset": bson.M{
